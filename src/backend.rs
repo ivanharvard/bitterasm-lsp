@@ -18,6 +18,20 @@ pub struct Backend {
     analysis: DashMap<Url, AnalysisResult>,
 }
 
+/// One malformed file must degrade one feature, not kill the whole server:
+/// tower-lsp drives every request off the same root future, so an
+/// uncaught panic anywhere unwinds all the way out of `main`, taking every
+/// other open file's highlighting and diagnostics down with it (see the
+/// `position.rs` trailing-newline-position bug this guarded against). Every
+/// request handler below routes its real work through this instead of
+/// calling straight into `analysis`/`semantic`/`position`.
+fn guarded<T>(f: impl FnOnce() -> T) -> Option<T> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(value) => Some(value),
+        Err(_) => None, // already logged to stderr by the default panic hook
+    }
+}
+
 impl Backend {
     pub fn new(client: Client) -> Self {
         Self { client, docs: DashMap::new(), analysis: DashMap::new() }
@@ -30,7 +44,12 @@ impl Backend {
     async fn refresh(&self, uri: &Url) {
         let Some(path) = Self::path_of(uri) else { return };
         let overlay = self.docs.get(uri).map(|entry| entry.value().clone());
-        let result = analysis::analyze_file(&path, overlay.as_deref());
+        let Some(result) = guarded(|| analysis::analyze_file(&path, overlay.as_deref())) else {
+            self.client
+                .log_message(MessageType::ERROR, format!("bitterasm-lsp: analysis panicked on {uri}"))
+                .await;
+            return;
+        };
 
         let diagnostics = result
             .diagnostics
@@ -145,7 +164,11 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
         let symbols = self.analysis.get(&uri);
-        let data = semantic::tokenize(&text, symbols.as_ref().and_then(|a| a.symbols.as_ref()));
+        let Some(data) =
+            guarded(|| semantic::tokenize(&text, symbols.as_ref().and_then(|a| a.symbols.as_ref())))
+        else {
+            return Ok(None);
+        };
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens { result_id: None, data })))
     }
 
@@ -158,22 +181,22 @@ impl LanguageServer for Backend {
         let Some(text) = self.docs.get(&uri).map(|entry| entry.value().clone()) else {
             return Ok(None);
         };
-        let offset = position_to_offset(&text, position);
-        let Some(name) = analysis::identifier_at(&text, offset) else { return Ok(None) };
         let Some(result) = self.analysis.get(&uri) else { return Ok(None) };
-        let Some((path, span)) = analysis::find_definition(&result, &name) else { return Ok(None) };
-        let Some(file) = result.sources.get(
-            result.sources.locate_span(span, Some(&name)).unwrap_or(result.entry_source),
-        ) else {
-            return Ok(None);
-        };
-        let Ok(target_uri) = Url::from_file_path(&path) else { return Ok(None) };
 
-        let range = Range {
-            start: offset_to_position(&file.source, span.start),
-            end: offset_to_position(&file.source, span.end),
-        };
-        Ok(Some(GotoDefinitionResponse::Scalar(Location { uri: target_uri, range })))
+        let response = guarded(|| {
+            let offset = position_to_offset(&text, position);
+            let name = analysis::identifier_at(&text, offset)?;
+            let (path, span) = analysis::find_definition(&result, &name)?;
+            let source_id = result.sources.locate_span(span, Some(&name)).unwrap_or(result.entry_source);
+            let file = result.sources.get(source_id)?;
+            let target_uri = Url::from_file_path(&path).ok()?;
+            let range = Range {
+                start: offset_to_position(&file.source, span.start),
+                end: offset_to_position(&file.source, span.end),
+            };
+            Some(GotoDefinitionResponse::Scalar(Location { uri: target_uri, range }))
+        });
+        Ok(response.flatten())
     }
 
     async fn hover(&self, params: HoverParams) -> RpcResult<Option<Hover>> {
@@ -183,19 +206,21 @@ impl LanguageServer for Backend {
         let Some(text) = self.docs.get(&uri).map(|entry| entry.value().clone()) else {
             return Ok(None);
         };
-        let offset = position_to_offset(&text, position);
-        let Some(name) = analysis::identifier_at(&text, offset) else { return Ok(None) };
         let Some(result) = self.analysis.get(&uri) else { return Ok(None) };
-        let Some(symbols) = result.symbols.as_ref() else { return Ok(None) };
-        let Some(id) = symbols.lookup(&name) else { return Ok(None) };
-        let symbol = symbols.get(id);
 
-        Ok(Some(Hover {
-            contents: HoverContents::Scalar(MarkedString::String(format!(
-                "```basm\n{:?} {}\n```",
-                symbol.kind, symbol.name
-            ))),
-            range: None,
-        }))
+        let response = guarded(|| {
+            let offset = position_to_offset(&text, position);
+            let name = analysis::identifier_at(&text, offset)?;
+            let symbols = result.symbols.as_ref()?;
+            let symbol = symbols.get(symbols.lookup(&name)?);
+            Some(Hover {
+                contents: HoverContents::Scalar(MarkedString::String(format!(
+                    "```basm\n{:?} {}\n```",
+                    symbol.kind, symbol.name
+                ))),
+                range: None,
+            })
+        });
+        Ok(response.flatten())
     }
 }
