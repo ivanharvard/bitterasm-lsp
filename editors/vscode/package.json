@@ -3,6 +3,7 @@
   "displayName": "BitterASM",
   "description": "Syntax highlighting, go-to-definition, and diagnostics for BitterASM (.basm) via bitterasm-lsp.",
   "version": "0.1.0",
+  "publisher": "ivanharvard",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -44,11 +45,13 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package -o bitterasm-vscode.vsix"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
     "typescript": "^5.4.0"
   },
   "dependencies": {
