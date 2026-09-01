@@ -1,0 +1,82 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "BitterASM",
+  "scopeName": "source.basm",
+  "fileTypes": ["basm"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#metaprogramming" },
+    { "include": "#keywords" },
+    { "include": "#captures" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.basm",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.basm",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [{ "name": "constant.character.escape.basm", "match": "\\\\." }]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.basm",
+          "match": "\\b[0-9][0-9_]*\\b"
+        }
+      ]
+    },
+    "metaprogramming": {
+      "patterns": [
+        {
+          "name": "keyword.control.directive.basm",
+          "match": "@\\s*[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.import.basm",
+          "match": "\\b(from|import|as)\\b"
+        },
+        {
+          "name": "storage.modifier.basm",
+          "match": "\\bpub\\b"
+        },
+        {
+          "name": "storage.type.basm",
+          "match": "\\b(macro|type|struct|enum|const)\\b"
+        },
+        {
+          "name": "keyword.other.lint.basm",
+          "match": "\\b(allow|expect|warn|deny|forbid|syntax|before|after|invariant|from|to)\\b"
+        }
+      ]
+    },
+    "captures": {
+      "patterns": [
+        {
+          "name": "variable.parameter.capture.basm",
+          "match": "\\$[A-Za-z_][A-Za-z0-9_]*\\$"
+        },
+        {
+          "name": "keyword.operator.backtick.basm",
+          "match": "`[^`]*`"
+        }
+      ]
+    }
+  }
+}

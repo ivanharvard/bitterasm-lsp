@@ -1,0 +1,18 @@
+[package]
+name = "bitterasm-lsp"
+version = "0.1.0"
+edition = "2024"
+description = "Language server for BitterASM: semantic-token syntax highlighting, go-to-definition, and diagnostics."
+license = "MIT"
+repository = "https://github.com/ivanharvard/bitterasm-lsp"
+
+[[bin]]
+name = "bitterasm-lsp"
+path = "src/main.rs"
+
+[dependencies]
+bitterasm = { git = "https://github.com/ivanharvard/bitterasm.git", rev = "1066e083bb6abd4de63a84bea06e76a7dd0925de" }
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["full"] }
+dashmap = "6"
+serde_json = "1"

@@ -1,0 +1,57 @@
+{
+  "name": "bitterasm-vscode",
+  "displayName": "BitterASM",
+  "description": "Syntax highlighting, go-to-definition, and diagnostics for BitterASM (.basm) via bitterasm-lsp.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ivanharvard/bitterasm-lsp"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:basm"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "basm",
+        "aliases": ["BitterASM", "basm"],
+        "extensions": [".basm"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "basm",
+        "scopeName": "source.basm",
+        "path": "./syntaxes/basm.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "BitterASM",
+      "properties": {
+        "bitterasm-lsp.serverPath": {
+          "type": "string",
+          "default": "bitterasm-lsp",
+          "description": "Path to the bitterasm-lsp executable. Defaults to looking it up on PATH."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
