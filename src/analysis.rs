@@ -12,6 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
+use bitterasm::ast::{ImportStatement, Statement};
 use bitterasm::diagnostics::{self, Diagnostic, LintConfig, SourceId, SourceMap};
 use bitterasm::resolver::{self, SymbolId, SymbolTable};
 use bitterasm::{formatter, loader};
@@ -19,8 +20,14 @@ use bitterasm::{formatter, loader};
 pub struct AnalysisResult {
     pub sources: SourceMap,
     pub entry_source: SourceId,
+    pub entry_path: PathBuf,
     pub diagnostics: Vec<Diagnostic>,
     pub symbols: Option<SymbolTable>,
+    /// The entry file's own `from ... import ...` statements, unflattened
+    /// (straight from `load_entry_program`, before the loader merges every
+    /// imported declaration into one program and the import statements
+    /// themselves disappear) — see `find_import_target`.
+    pub imports: Vec<ImportStatement>,
 }
 
 /// `overlay` is the entry file's own unsaved buffer text, if the editor has
@@ -29,6 +36,7 @@ pub struct AnalysisResult {
 /// for the file you're actively typing in without needing to fork the
 /// compiler's loader to support a general overlay filesystem.
 pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
+    let entry_path = entry.to_path_buf();
     let mut sources = SourceMap::default();
     let entry_text = match overlay {
         Some(text) => text.to_string(),
@@ -43,14 +51,38 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
 
     let mut diags = Vec::new();
 
+    macro_rules! bail {
+        () => {
+            return AnalysisResult {
+                sources, entry_source, entry_path, diagnostics: diags, symbols: None,
+                imports: Vec::new(),
+            }
+        };
+        ($imports:expr) => {
+            return AnalysisResult {
+                sources, entry_source, entry_path, diagnostics: diags, symbols: None,
+                imports: $imports,
+            }
+        };
+    }
+
     let program = match loader::load_entry_program(entry) {
         Ok(program) => program,
         Err(error) => {
             diags.push(diagnostics::load_error(error, &mut sources));
-            return AnalysisResult { sources, entry_source, diagnostics: diags, symbols: None };
+            bail!();
         }
     };
     diags.extend(diagnostics::lint_program(&program, entry_source, &config));
+
+    let imports: Vec<ImportStatement> = program
+        .statements
+        .iter()
+        .filter_map(|statement| match statement {
+            Statement::Import(import) => Some(import.clone()),
+            _ => None,
+        })
+        .collect();
 
     if let Ok(files) = loader::load_sources(entry) {
         for (path, text) in files {
@@ -62,7 +94,7 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
         Ok(program) => program,
         Err(error) => {
             diags.push(diagnostics::load_error(error, &mut sources));
-            return AnalysisResult { sources, entry_source, diagnostics: diags, symbols: None };
+            bail!(imports);
         }
     };
     let flattened = match resolver::unroll_top_level(flattened) {
@@ -70,13 +102,13 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
         Err(error) => {
             let source = sources.locate_span(error.span(), error.source_needle());
             diags.push(diagnostics::resolve_error(error, source));
-            return AnalysisResult { sources, entry_source, diagnostics: diags, symbols: None };
+            bail!(imports);
         }
     };
     if let Err(error) = resolver::validate_facets(&flattened) {
         let source = sources.locate_span(error.span(), error.source_needle());
         diags.push(diagnostics::resolve_error(error, source));
-        return AnalysisResult { sources, entry_source, diagnostics: diags, symbols: None };
+        bail!(imports);
     }
 
     let symbols = match resolver::collect_symbols(&flattened) {
@@ -84,7 +116,7 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
         Err(error) => {
             let source = sources.locate_span(error.span(), error.source_needle());
             diags.push(diagnostics::resolve_error(error, source));
-            return AnalysisResult { sources, entry_source, diagnostics: diags, symbols: None };
+            bail!(imports);
         }
     };
 
@@ -93,7 +125,7 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
         diags.push(diagnostics::resolve_error(error, source));
     }
 
-    AnalysisResult { sources, entry_source, diagnostics: diags, symbols: Some(symbols) }
+    AnalysisResult { sources, entry_source, entry_path, diagnostics: diags, symbols: Some(symbols), imports }
 }
 
 /// The identifier token, if any, whose span covers `offset` (or touches it
@@ -110,6 +142,46 @@ pub fn identifier_at(text: &str, offset: usize) -> Option<String> {
         }
         None
     })
+}
+
+/// The file a `from <module path> import ...` statement's module path
+/// points at, if `offset` falls inside that path — reimplements bitterasm's
+/// own (crate-private) `loader::resolve_module_path`/`module_base_dir`
+/// rather than calling it, since neither is reachable from outside the
+/// compiler crate. A non-relative path (`relative_level == 0`, e.g. `from
+/// std.riscv.c_like import *`) resolves against the process's current
+/// directory — the same "must be the workspace root" requirement
+/// `analyze_file`'s callers already have to satisfy for the loader itself
+/// to find anything. A relative path (`from .foo import *`, `relative_level
+/// == 1`) resolves against the importing file's own directory, walking up
+/// one more parent per extra leading dot.
+///
+/// Doesn't (yet) handle the submodule sugar `from std import u8string`
+/// reaching for `std/u8string.basm` — that's a click on an imported *name*
+/// after `import`, not on the module path itself, a different span than
+/// what this checks against.
+pub fn find_import_target(result: &AnalysisResult, offset: usize) -> Option<PathBuf> {
+    let import = result
+        .imports
+        .iter()
+        .find(|import| import.module.span.start <= offset && offset <= import.module.span.end)?;
+
+    let base = if import.module.relative_level == 0 {
+        std::env::current_dir().ok()?
+    } else {
+        let mut dir = result.entry_path.parent()?.to_path_buf();
+        for _ in 1..import.module.relative_level {
+            dir = dir.parent().map(Path::to_path_buf).unwrap_or(dir);
+        }
+        dir
+    };
+
+    let mut candidate = base;
+    for segment in &import.module.segments {
+        candidate.push(segment);
+    }
+    candidate.set_extension("basm");
+    candidate.canonicalize().ok()
 }
 
 /// Resolves an identifier's name to the file + byte span of its top-level

@@ -185,6 +185,19 @@ impl LanguageServer for Backend {
 
         let response = guarded(|| {
             let offset = position_to_offset(&text, position);
+
+            // A click on `from <module path> import ...` jumps to that
+            // file (top, since there's no single "declaration" to land on)
+            // rather than going through the symbol table at all — a module
+            // path segment like `c_like` in `std.riscv.c_like` isn't a
+            // declared macro/type/const, so `identifier_at` +
+            // `find_definition` below would never find it.
+            if let Some(target_path) = analysis::find_import_target(&result, offset) {
+                let target_uri = Url::from_file_path(&target_path).ok()?;
+                let range = Range { start: Position { line: 0, character: 0 }, end: Position { line: 0, character: 0 } };
+                return Some(GotoDefinitionResponse::Scalar(Location { uri: target_uri, range }));
+            }
+
             let name = analysis::identifier_at(&text, offset)?;
             let (path, span) = analysis::find_definition(&result, &name)?;
             let source_id = result.sources.locate_span(span, Some(&name)).unwrap_or(result.entry_source);
