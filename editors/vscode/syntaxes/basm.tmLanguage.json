@@ -6,9 +6,11 @@
   "patterns": [
     { "include": "#comments" },
     { "include": "#strings" },
+    { "include": "#chars" },
     { "include": "#numbers" },
     { "include": "#metaprogramming" },
     { "include": "#keywords" },
+    { "include": "#types" },
     { "include": "#captures" }
   ],
   "repository": {
@@ -27,6 +29,15 @@
           "begin": "\"",
           "end": "\"",
           "patterns": [{ "name": "constant.character.escape.basm", "match": "\\\\." }]
+        }
+      ]
+    },
+    "chars": {
+      "comment": "A char literal is sugar for its codepoint as a plain integer (see lexer.rs's lex_char), so it's scoped as a numeric constant rather than a string.",
+      "patterns": [
+        {
+          "name": "constant.numeric.basm",
+          "match": "'([^'\\\\]|\\\\.)'"
         }
       ]
     },
@@ -54,7 +65,7 @@
         },
         {
           "name": "storage.modifier.basm",
-          "match": "\\bpub\\b"
+          "match": "\\b(pub|skip)\\b"
         },
         {
           "name": "storage.type.basm",
@@ -63,6 +74,24 @@
         {
           "name": "keyword.other.lint.basm",
           "match": "\\b(allow|expect|warn|deny|forbid|syntax|before|after|invariant|from|to)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "entity.name.type.primitive.basm",
+          "match": "\\bint\\b"
+        },
+        {
+          "comment": "`Fn(...)` / `Fn(...) -> ...` — the one generic-parameter bound the language understands (`F: Fn(T) -> S`), recognized by name rather than a real keyword.",
+          "name": "support.type.fn-bound.basm",
+          "match": "\\bFn\\b(?=\\s*\\()"
+        },
+        {
+          "comment": "A bare identifier shaped like a generic type parameter (T, U, K, N, T1, ...): a single uppercase letter followed only by digits.",
+          "name": "entity.name.type.parameter.basm",
+          "match": "\\b[A-Z][0-9]*\\b"
         }
       ]
     },

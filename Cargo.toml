@@ -11,7 +11,7 @@ name = "bitterasm-lsp"
 path = "src/main.rs"
 
 [dependencies]
-bitterasm = { git = "https://github.com/ivanharvard/bitterasm.git", rev = "1066e083bb6abd4de63a84bea06e76a7dd0925de" }
+bitterasm = { path = "../bitterasm" }
 tower-lsp = "0.20"
 tokio = { version = "1", features = ["full"] }
 dashmap = "6"

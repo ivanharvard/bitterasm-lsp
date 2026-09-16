@@ -90,15 +90,21 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
         }
     }
 
-    let flattened = match loader::load_program(entry) {
-        Ok(program) => program,
+    // `origins` is what lets `collect_symbols` (below) tag each declaration
+    // with the module that actually wrote it — without it, every
+    // non-`pub` struct field would look like it belongs to whichever
+    // module happens to occupy id 0, silently passing (or wrongly
+    // failing) `bitterasm`'s cross-module field-visibility check instead
+    // of matching what `bitterasm check` itself would report.
+    let (flattened, origins) = match loader::load_program_with_modules(entry) {
+        Ok(result) => result,
         Err(error) => {
             diags.push(diagnostics::load_error(error, &mut sources));
             bail!(imports);
         }
     };
-    let flattened = match resolver::unroll_top_level(flattened) {
-        Ok(program) => program,
+    let (flattened, statement_modules) = match resolver::unroll_top_level(flattened, origins.all()) {
+        Ok(result) => result,
         Err(error) => {
             let source = sources.locate_span(error.span(), error.source_needle());
             diags.push(diagnostics::resolve_error(error, source));
@@ -111,7 +117,7 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
         bail!(imports);
     }
 
-    let symbols = match resolver::collect_symbols(&flattened) {
+    let symbols = match resolver::collect_symbols(&flattened, &statement_modules) {
         Ok(symbols) => symbols,
         Err(error) => {
             let source = sources.locate_span(error.span(), error.source_needle());

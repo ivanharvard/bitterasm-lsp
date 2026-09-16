@@ -36,3 +36,35 @@ fn reg_definition_is_found() {
     assert!(def.is_some(), "expected `Reg`'s declaration to be found");
     assert_eq!(def.unwrap().0, path);
 }
+
+/// `std.array`'s `mapped<T, S, F: Fn(T) -> S>(arr: Array<T, ...>, f: F)` —
+/// a generic type parameter bound by `Fn(...)`, the newest bit of grammar
+/// this server has to parse and resolve through. Not a dedicated fixture:
+/// `std/array.basm` already carries it in real, checked-in code.
+#[test]
+#[ignore]
+fn generic_fn_bound_parses_and_resolves_cleanly() {
+    let checkout: PathBuf = std::env::var("BITTERASM_CHECKOUT")
+        .expect("set BITTERASM_CHECKOUT to a bitterasm checkout to run this test")
+        .into();
+
+    std::env::set_current_dir(&checkout).unwrap();
+    let path = checkout.join("std/array.basm");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let result = analysis::analyze_file(&path, Some(&text));
+
+    assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+    assert!(result.symbols.is_some());
+
+    // An ordinary type reference elsewhere in `mapped`'s own signature
+    // still resolves normally — the new bound syntax shouldn't have
+    // knocked anything else in the same declaration out of alignment.
+    let idx = text.find("Array<T, ...>").unwrap();
+    let offset = idx + 1; // inside "Array"
+    let name = analysis::identifier_at(&text, offset);
+    assert_eq!(name.as_deref(), Some("Array"));
+
+    let def = analysis::find_definition(&result, "Array");
+    assert!(def.is_some(), "expected `Array`'s declaration to be found");
+    assert_eq!(def.unwrap().0, path);
+}

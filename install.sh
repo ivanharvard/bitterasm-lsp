@@ -41,7 +41,9 @@ if [ "$install_server" = true ]; then
     cargo build --release --manifest-path "$repo_root/Cargo.toml"
 
     mkdir -p "$bin_dir"
-    cp "$repo_root/target/release/bitterasm-lsp" "$bin_dir/bitterasm-lsp"
+    staged_server="$bin_dir/.bitterasm-lsp.new"
+    install -m 755 "$repo_root/target/release/bitterasm-lsp" "$staged_server"
+    mv -f "$staged_server" "$bin_dir/bitterasm-lsp"
     echo "  installed $bin_dir/bitterasm-lsp"
 fi
 
