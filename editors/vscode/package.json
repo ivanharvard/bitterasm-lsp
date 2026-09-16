@@ -5,6 +5,11 @@
   "version": "0.1.0",
   "publisher": "ivanharvard",
   "license": "MIT",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#452b17",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/ivanharvard/bitterasm-lsp"
@@ -21,7 +26,11 @@
         "id": "basm",
         "aliases": ["BitterASM", "basm"],
         "extensions": [".basm"],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/basm-file-icon.svg",
+          "dark": "./icons/basm-file-icon.svg"
+        }
       }
     ],
     "grammars": [
