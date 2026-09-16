@@ -95,7 +95,6 @@ checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 [[package]]
 name = "bitterasm"
 version = "0.1.0"
-source = "git+https://github.com/ivanharvard/bitterasm.git?rev=1066e083bb6abd4de63a84bea06e76a7dd0925de#1066e083bb6abd4de63a84bea06e76a7dd0925de"
 dependencies = [
  "clap",
  "num-bigint",
