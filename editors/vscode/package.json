@@ -28,8 +28,8 @@
         "extensions": [".basm"],
         "configuration": "./language-configuration.json",
         "icon": {
-          "light": "./icons/basm-file-icon.svg",
-          "dark": "./icons/basm-file-icon.svg"
+          "light": "./icons/basm-file-icon.png",
+          "dark": "./icons/basm-file-icon.png"
         }
       }
     ],
