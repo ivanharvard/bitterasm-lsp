@@ -73,7 +73,7 @@
         },
         {
           "name": "keyword.other.lint.basm",
-          "match": "\\b(allow|expect|warn|deny|forbid|syntax|before|after|invariant|from|to)\\b"
+          "match": "\\b(allow|expect|warn|deny|forbid|syntax|before|after|invariant|from|to|emits)\\b"
         }
       ]
     },

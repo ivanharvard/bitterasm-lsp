@@ -68,3 +68,36 @@ fn generic_fn_bound_parses_and_resolves_cleanly() {
     assert!(def.is_some(), "expected `Array`'s declaration to be found");
     assert_eq!(def.unwrap().0, path);
 }
+
+/// `std/riscv/impl.basm`'s instruction macros declare `| emits
+/// LittleEndian<...>` rather than a `-> Type` return annotation — an
+/// `@emit`-only macro was never actually checked against `-> T`, so the
+/// facet replaced it. The newest bit of grammar this server has to parse
+/// and resolve through. Not a dedicated fixture: `std/riscv/impl.basm`
+/// already carries it in real, checked-in code.
+#[test]
+#[ignore]
+fn emits_facet_parses_and_resolves_cleanly() {
+    let checkout: PathBuf = std::env::var("BITTERASM_CHECKOUT")
+        .expect("set BITTERASM_CHECKOUT to a bitterasm checkout to run this test")
+        .into();
+
+    std::env::set_current_dir(&checkout).unwrap();
+    let path = checkout.join("std/riscv/impl.basm");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let result = analysis::analyze_file(&path, Some(&text));
+
+    assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+    assert!(result.symbols.is_some());
+
+    // The type an `emits` facet names still resolves normally — same
+    // `LittleEndian` a `-> Type` annotation elsewhere in this file would
+    // have named, just declared through the new facet instead.
+    let idx = text.find("emits LittleEndian<IType, 32>").unwrap();
+    let offset = idx + "emits ".len() + 1; // inside "LittleEndian"
+    let name = analysis::identifier_at(&text, offset);
+    assert_eq!(name.as_deref(), Some("LittleEndian"));
+
+    let def = analysis::find_definition(&result, "LittleEndian");
+    assert!(def.is_some(), "expected `LittleEndian`'s declaration to be found");
+}
