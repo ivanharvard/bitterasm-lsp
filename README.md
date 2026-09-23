@@ -13,11 +13,12 @@ exactly what the compiler itself sees.
 - **Syntax highlighting** via LSP semantic tokens, computed live from
   `bitterasm::lexer::lex` on every keystroke — correct even for code that doesn't parse.
   When the file last resolved cleanly, plain identifiers that match a top-level macro,
-  type, struct, enum, or const are additionally colored by that specific kind, the way
-  an IDE distinguishes a known function call from an arbitrary name.
-- **Go to definition** for macros, types, structs, enums, and consts, backed by the
+  type, struct, enum, const, or label are additionally colored by that specific kind,
+  the way an IDE distinguishes a known function call from an arbitrary name.
+- **Go to definition** for macros, types, structs, enums, consts, and labels, backed by the
   real resolver's `SymbolTable` — not a text search. Works across `from x.y import *`
-  imports, since the loader's whole flattened import graph is resolved.
+  imports, and imported `pub` labels jump to the label in their declaring file, since
+  the loader's whole flattened import graph is resolved.
 - **Diagnostics** — lexer, parser, loader, and resolver errors, plus the compiler's
   lint set (`unused_import`, `unreachable_code`, etc.), reported the moment you open,
   edit, or save a file.

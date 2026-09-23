@@ -7,6 +7,8 @@ use std::path::PathBuf;
 
 #[path = "../src/analysis.rs"]
 mod analysis;
+#[path = "../src/semantic.rs"]
+mod semantic;
 
 #[test]
 #[ignore]
@@ -100,4 +102,92 @@ fn emits_facet_parses_and_resolves_cleanly() {
 
     let def = analysis::find_definition(&result, "LittleEndian");
     assert!(def.is_some(), "expected `LittleEndian`'s declaration to be found");
+}
+
+/// Sections, public labels, the `leaks_section` facet, and imported public
+/// labels arrived together as the source-level pieces of multi-file linking.
+/// Analyze a small real pair of files so this catches drift in both parsing
+/// and the external-label symbol kind used by semantic highlighting.
+#[test]
+#[ignore]
+fn sections_and_external_labels_parse_resolve_and_highlight() {
+    let checkout: PathBuf = std::env::var("BITTERASM_CHECKOUT")
+        .expect("set BITTERASM_CHECKOUT to a bitterasm checkout to run this test")
+        .into();
+
+    std::env::set_current_dir(&checkout).unwrap();
+    let path = checkout.join("tests/fixtures/emit/extern_label_importer.basm");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let result = analysis::analyze_file(&path, Some(&text));
+
+    assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+    let symbols = result.symbols.as_ref().expect("expected a resolved symbol table");
+    let target = symbols.get(symbols.lookup("target").expect("expected imported public label"));
+    assert_eq!(target.kind, bitterasm::resolver::SymbolKind::ExternLabel);
+
+    let definition = analysis::find_definition(&result, "target")
+        .expect("expected the imported label's definition");
+    assert_eq!(
+        definition.0,
+        checkout
+            .join("tests/fixtures/emit/extern_label_dep.basm")
+            .canonicalize()
+            .unwrap()
+    );
+
+    let semantic_tokens = semantic::tokenize(&text, Some(symbols));
+    assert!(
+        semantic_tokens.iter().any(|token| token.token_type == 3),
+        "the imported external label should receive semantic highlighting"
+    );
+
+    // Keep the source-only additions covered too; this sample is deliberately
+    // local because the checked-in linking fixture does not need a section-
+    // leaking macro itself.
+    let source = "section .text\npub entry:\nmacro switch() | leaks_section {\n    section .data\n}\n";
+    let tokens = bitterasm::lexer::lex(source).expect("new syntax should lex");
+    bitterasm::parser::parse(tokens).expect("new syntax should parse");
+}
+
+/// Dotted label names (`.loop:`, `jmp .skip`) are one name to the LSP even
+/// though the compiler lexes them as a `.` plus a word — including a word
+/// that's a keyword on its own (`skip`).
+#[test]
+#[ignore]
+fn dotted_labels_resolve_and_highlight() {
+    let checkout: PathBuf = std::env::var("BITTERASM_CHECKOUT")
+        .expect("set BITTERASM_CHECKOUT to a bitterasm checkout to run this test")
+        .into();
+
+    std::env::set_current_dir(&checkout).unwrap();
+    let dir = std::env::temp_dir().join(format!("bitterasm-lsp-dotted-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("dotted.basm");
+    let text = "jmp_to .skip\n.skip:\nmacro jmp_to(target: int) {\n    @emit target\n}\n";
+    std::fs::write(&path, text).unwrap();
+
+    let result = analysis::analyze_file(&path, Some(text));
+    assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+
+    let offset = text.find(".skip").unwrap() + 3;
+    let name = analysis::identifier_at(text, offset);
+    assert_eq!(name.as_deref(), Some(".skip"));
+
+    let definition = analysis::find_definition(&result, ".skip")
+        .expect("expected the dotted label's definition");
+    assert_eq!(&text[definition.1.start..definition.1.start + 6], ".skip:");
+
+    let symbols = result.symbols.as_ref().expect("expected a resolved symbol table");
+    let semantic_tokens = semantic::tokenize(text, Some(symbols));
+    assert!(
+        semantic_tokens.iter().any(|token| token.token_type == 3 && token.length == 5),
+        "the dotted label should be highlighted as one 5-char token"
+    );
+
+    // member access stays member access
+    let tokens = bitterasm::lexer::lex("x str.len").unwrap();
+    let names: Vec<String> = analysis::names(&tokens).into_iter().map(|(name, _)| name).collect();
+    assert_eq!(names, vec!["x", "str", "len"]);
+
+    std::fs::remove_dir_all(&dir).ok();
 }

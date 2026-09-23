@@ -97,6 +97,7 @@ name = "bitterasm"
 version = "0.1.0-alpha.1"
 dependencies = [
  "clap",
+ "libc",
  "num-bigint",
  "serde",
  "serde_json",

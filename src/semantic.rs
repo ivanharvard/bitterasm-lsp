@@ -23,7 +23,6 @@
 
 use bitterasm::lexer;
 use bitterasm::resolver::{SymbolKind, SymbolTable};
-use bitterasm::token::TokenKind;
 use tower_lsp::lsp_types::{SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend};
 
 pub const TOKEN_TYPES: &[SemanticTokenType] = &[
@@ -51,7 +50,7 @@ fn upgrade_from_symbols(name: &str, symbols: &SymbolTable) -> Option<(u32, u32)>
         SymbolKind::Macro => (MACRO, 0),
         SymbolKind::Struct | SymbolKind::Enum | SymbolKind::TypeAlias => (TYPE, 0),
         SymbolKind::Const => (VARIABLE, 1 << 0), // readonly
-        SymbolKind::Label => (EVENT, 0),
+        SymbolKind::Label | SymbolKind::ExternLabel => (EVENT, 0),
     })
 }
 
@@ -60,10 +59,9 @@ pub fn tokenize(source: &str, symbols: Option<&SymbolTable>) -> Vec<SemanticToke
     let Ok(tokens) = lexer::lex(source) else { return Vec::new() };
 
     let mut raw = Vec::new();
-    for token in &tokens {
-        let TokenKind::Identifier(name) = &token.kind else { continue };
-        let Some((ty, modifiers)) = upgrade_from_symbols(name, symbols) else { continue };
-        raw.push((token.span.start, token.span.end, ty, modifiers));
+    for (name, span) in crate::analysis::names(&tokens) {
+        let Some((ty, modifiers)) = upgrade_from_symbols(&name, symbols) else { continue };
+        raw.push((span.start, span.end, ty, modifiers));
     }
 
     encode(source, &raw)

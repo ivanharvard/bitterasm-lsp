@@ -9,6 +9,7 @@
     { "include": "#chars" },
     { "include": "#numbers" },
     { "include": "#metaprogramming" },
+    { "include": "#dotted" },
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#captures" }
@@ -57,6 +58,23 @@
         }
       ]
     },
+    "dotted": {
+      "comment": "Names with a leading `.`, matched before #keywords so a keyword after the dot (`.skip`, `.type`) isn't colored as one. A section name (`section .text`) and a relative import path (`from .foo import`) aren't labels, so they're claimed first; a dotted label (`.loop:`, `jmp .loop`) is a `.` not glued to a value before it (that would be member access, `str.len`).",
+      "patterns": [
+        {
+          "match": "\\b(section)\\s+\\.?[A-Za-z_][A-Za-z0-9_.]*",
+          "captures": { "1": { "name": "keyword.control.section.basm" } }
+        },
+        {
+          "match": "\\b(from)\\s+\\.+[A-Za-z_][A-Za-z0-9_.]*",
+          "captures": { "1": { "name": "keyword.control.import.basm" } }
+        },
+        {
+          "name": "entity.name.label.basm",
+          "match": "(?<![A-Za-z0-9_)\\]}.])\\.[A-Za-z_][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
     "keywords": {
       "patterns": [
         {
@@ -72,8 +90,12 @@
           "match": "\\b(macro|type|struct|enum|const)\\b"
         },
         {
+          "name": "keyword.control.section.basm",
+          "match": "\\bsection\\b"
+        },
+        {
           "name": "keyword.other.lint.basm",
-          "match": "\\b(allow|expect|warn|deny|forbid|syntax|before|after|invariant|from|to|emits)\\b"
+          "match": "\\b(allow|expect|warn|deny|forbid|syntax|before|after|invariant|from|to|emits|leaks_section)\\b"
         }
       ]
     },
