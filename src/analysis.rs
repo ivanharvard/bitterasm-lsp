@@ -217,16 +217,10 @@ pub fn identifier_at(text: &str, offset: usize) -> Option<String> {
 }
 
 /// The file a `from <module path> import ...` statement's module path
-/// points at, if `offset` falls inside that path — reimplements bitterasm's
-/// own (crate-private) `loader::resolve_module_path`/`module_base_dir`
-/// rather than calling it, since neither is reachable from outside the
-/// compiler crate. A non-relative path (`relative_level == 0`, e.g. `from
-/// std.riscv.c_like import *`) resolves against the process's current
-/// directory — the same "must be the workspace root" requirement
-/// `analyze_file`'s callers already have to satisfy for the loader itself
-/// to find anything. A relative path (`from .foo import *`, `relative_level
-/// == 1`) resolves against the importing file's own directory, walking up
-/// one more parent per extra leading dot.
+/// points at, if `offset` falls inside that path — resolved by bitterasm's
+/// own `loader::resolve_module_path`, so an absolute path finds the same file
+/// the compiler would: under the current directory, a `BITTERASM_PATH`
+/// entry, or the installed `~/.bitterasm/std`.
 ///
 /// Doesn't (yet) handle the submodule sugar `from std import u8string`
 /// reaching for `std/u8string.basm` — that's a click on an imported *name*
@@ -238,22 +232,7 @@ pub fn find_import_target(result: &AnalysisResult, offset: usize) -> Option<Path
         .iter()
         .find(|import| import.module.span.start <= offset && offset <= import.module.span.end)?;
 
-    let base = if import.module.relative_level == 0 {
-        std::env::current_dir().ok()?
-    } else {
-        let mut dir = result.entry_path.parent()?.to_path_buf();
-        for _ in 1..import.module.relative_level {
-            dir = dir.parent().map(Path::to_path_buf).unwrap_or(dir);
-        }
-        dir
-    };
-
-    let mut candidate = base;
-    for segment in &import.module.segments {
-        candidate.push(segment);
-    }
-    candidate.set_extension("basm");
-    candidate.canonicalize().ok()
+    loader::resolve_module_path(&import.module, &result.entry_path).ok()
 }
 
 /// Resolves an identifier's name to the file + byte span of its top-level
