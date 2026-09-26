@@ -8,15 +8,87 @@ install_root="$HOME/.bitterasm"
 bin_dir="$install_root/bin"
 vscode_dir="$repo_root/editors/vscode"
 
+usage() {
+    cat <<EOF
+Usage: $0 [-y]
+
+Builds and installs the bitterasm-lsp language server to $bin_dir and,
+if VS Code is available, the BitterASM VS Code extension.
+
+  -y, --yes    Answer yes to every prompt
+  -h, --help   Show this help
+EOF
+}
+
+assume_yes=false
+
+for arg in "$@"; do
+    case "$arg" in
+        -y|--yes) assume_yes=true ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "unknown option: $arg" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
 ask() {
     local prompt="$1"
     local reply
+
+    if [ "$assume_yes" = true ]; then
+        echo "$prompt [Y/n] y"
+        return 0
+    fi
 
     read -r -p "$prompt [Y/n] " reply
 
     case "$reply" in
         [nN]*) return 1 ;;
         *) return 0 ;;
+    esac
+}
+
+# How to put $bin_dir on PATH, for whichever shell $SHELL names.
+print_path_help() {
+    local shell_name
+    shell_name="$(basename "${SHELL:-}")"
+
+    echo
+    echo "$bin_dir isn't on your PATH yet."
+    echo
+
+    case "$shell_name" in
+        fish)
+            echo "Add it (fish saves this for future sessions) with:"
+            echo
+            echo "    fish_add_path $bin_dir"
+            ;;
+        zsh)
+            echo "Add it to ~/.zshrc with:"
+            echo
+            echo "    echo 'export PATH=\"$bin_dir:\$PATH\"' >> ~/.zshrc"
+            echo "    source ~/.zshrc"
+            ;;
+        bash)
+            local rc="$HOME/.bashrc"
+            [ "$(uname)" = Darwin ] && rc="$HOME/.bash_profile"
+            echo "Add it to ${rc/#$HOME/\~} with:"
+            echo
+            echo "    echo 'export PATH=\"$bin_dir:\$PATH\"' >> ${rc/#$HOME/\~}"
+            echo "    source ${rc/#$HOME/\~}"
+            ;;
+        csh|tcsh)
+            local rc="$HOME/.${shell_name}rc"
+            echo "Add it to ${rc/#$HOME/\~} with:"
+            echo
+            echo "    echo 'setenv PATH \"$bin_dir:\$PATH\"' >> ${rc/#$HOME/\~}"
+            echo "    source ${rc/#$HOME/\~}"
+            ;;
+        *)
+            echo "Add this line to your shell's startup file (sh syntax; adapt it"
+            echo "for other shells):"
+            echo
+            echo "    export PATH=\"$bin_dir:\$PATH\""
+            ;;
     esac
 }
 
@@ -64,14 +136,16 @@ if [ "$install_server" = true ]; then
     case ":$PATH:" in
         *":$bin_dir:"*) ;;
         *)
-            echo
-            echo "$bin_dir isn't on your PATH yet. Add it with:"
-            echo
-            echo "    export PATH=\"$bin_dir:\$PATH\""
+            # bitterasm's own install.sh, when it ran this one, prints the
+            # PATH advice itself once it finishes.
+            if [ -z "${BITTERASM_PARENT_INSTALL:-}" ]; then
+                print_path_help
+            fi
+
             if [ "$install_vscode" = true ]; then
                 echo
-                echo "A GUI-launched VS Code often won't pick that up even after a shell"
-                echo "restart. If the extension can't find the server, set it explicitly"
+                echo "A GUI-launched VS Code often won't pick up a PATH change even after a"
+                echo "shell restart. If the extension can't find the server, set it explicitly"
                 echo "instead, in VS Code's settings.json:"
                 echo
                 echo "    \"bitterasm-lsp.serverPath\": \"$bin_dir/bitterasm-lsp\""
