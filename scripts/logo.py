@@ -5,12 +5,13 @@ Writes to assets/ (or --out):
 
     icon.svg, icon.png                 the hexagon, centered, transparent
     icon-white.svg, icon-white.png     the same on a white background
+    icon-seti.svg, icon-seti.png       the file icon, sized and placed to sit among Seti's
     logo.svg, logo.png                 "Bitter" + hexagon holding "ASM", transparent
     logo-white.svg, logo-white.png     the same on a white background
     logo-dark.svg, logo-dark.png       transparent, with a light "Bitter" for dark backgrounds
 
-and, when writing to assets/, refreshes the VS Code extension and file icons
-from icon.svg.
+and, when writing to assets/, refreshes the VS Code extension icon from
+icon.svg and the .basm file icon from icon-seti.svg.
 
 "Bitter" is set in Bitter and "ASM" in JetBrains Mono, both bundled in
 assets/fonts, and converted to outlines, so the SVGs render the same
@@ -56,6 +57,11 @@ EDGE_WIDTH = 0.035    # lit and shaded edges, relative to the circumradius
 
 ICON_SIZE = 1024       # icon canvas, in SVG units and PNG pixels
 ICON_PAD = 0.1         # empty border around the icon's hexagon, per side
+# Seti, VS Code's default file icon theme, draws its icons as font glyphs that
+# are narrower than the 16px icon slot and sit right of its center, while a
+# language's SVG icon fills the slot. The file icon matches them instead.
+SETI_PAD = 0.15        # about 11px wide at 16px, like Seti's glyphs
+SETI_SHIFT = 0.1       # of the canvas, to the right: about 1.6px at 16px
 LOGO_HEX_HEIGHT = 512  # hexagon height in the full logo, in SVG units
 LOGO_PNG_SCALE = 2
 MEASURE_SIZE = 100     # font size text is measured at; ink scales linearly
@@ -160,10 +166,10 @@ class Renderer:
         return dst
 
 
-def icon(background, style):
+def icon(background, style, pad=ICON_PAD, shift=0):
     s = ICON_SIZE
-    height = s * (1 - 2 * ICON_PAD) * math.sqrt(3) / 2
-    return svg(s, s, hexagon(s / 2, s / 2, height, style), background), s, s
+    height = s * (1 - 2 * pad) * math.sqrt(3) / 2
+    return svg(s, s, hexagon(s * (0.5 + shift), s / 2, height, style), background), s, s
 
 
 def logo(r, word_font, asm_font, background, style, word_fill):
@@ -215,6 +221,8 @@ def main():
         r = Renderer([word_font, asm_font], tmp)
         icon_svg = r.write(args.out, "icon", icon(None, args.style), 1)
         r.write(args.out, "icon-white", icon("#ffffff", args.style), 1)
+        seti_svg = r.write(args.out, "icon-seti",
+                           icon(None, args.style, SETI_PAD, SETI_SHIFT), 1)
         for name, bg, fill in (("logo", None, TEXT_DARK),
                                ("logo-white", "#ffffff", TEXT_DARK),
                                ("logo-dark", None, TEXT_LIGHT)):
@@ -224,7 +232,7 @@ def main():
     if args.out.resolve() == (ROOT / "assets").resolve():
         vscode = ROOT / "editors/vscode"
         run("resvg", "-w", "256", str(icon_svg), str(vscode / "images/icon.png"))
-        shutil.copyfile(icon_svg, vscode / "icons/basm-file-icon.svg")
+        shutil.copyfile(seti_svg, vscode / "icons/basm-file-icon.svg")
     print(f"wrote {args.out} using {word_font.family} and {asm_font.family}")
 
 
