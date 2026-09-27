@@ -1,4 +1,5 @@
 <svg viewBox="0 0 1024.00 1024.00" width="1024" height="1024" xmlns="http://www.w3.org/2000/svg">
+    <path fill="#ffffff" stroke="none" d="M 0 0 L 1024 0 L 1024 1024 L 0 1024 Z"/>
     <path fill="#2a1a0e" stroke="none" d="M 921.6 512 L 716.8 866.72 L 307.2 866.72 L 102.4 512 L 307.2 157.28 L 716.8 157.28 Z"/>
     <path fill="#452b17" stroke="none" d="M 880.64 512 L 696.32 831.25 L 327.68 831.25 L 143.36 512 L 327.68 192.75 L 696.32 192.75 Z"/>
     <path fill="#5c391f" stroke="none" d="M 327.68 831.25 L 143.36 512 L 327.68 192.75 L 696.32 192.75 L 689.15 205.16 L 334.85 205.16 L 157.7 512 L 334.85 818.84 Z"/>
