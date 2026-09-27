@@ -34,6 +34,33 @@ pub struct AnalysisResult {
     /// imported declaration into one program and the import statements
     /// themselves disappear) — see `find_import_target`.
     pub imports: Vec<ImportStatement>,
+    /// What each name means in the entry file: the internal name
+    /// (`bits#3`, or `mov#3,5` for a macro overload set) the compiler's
+    /// loader rewrote it to, since every declaration in `symbols` goes by
+    /// one. Covers the file's own declarations and everything it imports,
+    /// `pub from` re-exports included — see `AnalysisResult::lookup`.
+    pub scope: HashMap<String, String>,
+}
+
+impl AnalysisResult {
+    /// The declaration `name` refers to in the entry file, the way the
+    /// compiler resolves it: through the file's own declarations and its
+    /// imports, never a same-named declaration some other module has.
+    pub fn lookup(&self, name: &str) -> Option<SymbolId> {
+        let symbols = self.symbols.as_ref()?;
+        let internal = self.scope.get(name).map_or(name, String::as_str);
+        // A macro overload set spanning modules (`mov#3,5`): its first
+        // module's overloads (`mov#3`) are as good a place to land as any.
+        let internal = internal.split_once(',').map_or(internal, |(first, _)| first);
+        symbols.lookup(internal)
+    }
+}
+
+/// The source file a resolver error belongs to. The error's names are the
+/// loader's internal ones; the source text has the names as written.
+fn locate(sources: &SourceMap, error: &resolver::ResolveError) -> Option<SourceId> {
+    let needle = error.source_needle().map(loader::demangle);
+    sources.locate_span(error.span(), needle.as_deref())
 }
 
 /// `overlay` is the entry file's own unsaved buffer text, if the editor has
@@ -63,6 +90,7 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
                 sources, entry_source, entry_path, diagnostics: diags, symbols: None,
                 extern_labels: HashMap::new(),
                 imports: Vec::new(),
+                scope: HashMap::new(),
             }
         };
         ($imports:expr) => {
@@ -70,6 +98,7 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
                 sources, entry_source, entry_path, diagnostics: diags, symbols: None,
                 extern_labels: HashMap::new(),
                 imports: $imports,
+                scope: HashMap::new(),
             }
         };
     }
@@ -116,7 +145,7 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
         .iter()
         .filter_map(|statement| match statement {
             Statement::ExternLabel(label) => {
-                Some((label.name.clone(), PathBuf::from(&label.file)))
+                Some((loader::demangle(&label.name), PathBuf::from(&label.file)))
             }
             _ => None,
         })
@@ -124,13 +153,13 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
     let (flattened, statement_modules) = match resolver::unroll_top_level(flattened, origins.all()) {
         Ok(result) => result,
         Err(error) => {
-            let source = sources.locate_span(error.span(), error.source_needle());
+            let source = locate(&sources, &error);
             diags.push(diagnostics::resolve_error(error, source));
             bail!(imports);
         }
     };
     if let Err(error) = resolver::validate_facets(&flattened) {
-        let source = sources.locate_span(error.span(), error.source_needle());
+        let source = locate(&sources, &error);
         diags.push(diagnostics::resolve_error(error, source));
         bail!(imports);
     }
@@ -138,20 +167,22 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
     let symbols = match resolver::collect_symbols(&flattened, &statement_modules) {
         Ok(symbols) => symbols,
         Err(error) => {
-            let source = sources.locate_span(error.span(), error.source_needle());
+            let source = locate(&sources, &error);
             diags.push(diagnostics::resolve_error(error, source));
             bail!(imports);
         }
     };
 
     if let Err(error) = resolver::ConstEvaluator::new(&flattened, &symbols).evaluate_all() {
-        let source = sources.locate_span(error.span(), error.source_needle());
+        let source = locate(&sources, &error);
         diags.push(diagnostics::resolve_error(error, source));
     }
 
+    let scope = origins.scopes()[origins.entry_module()].clone();
+
     AnalysisResult {
         sources, entry_source, entry_path, diagnostics: diags, symbols: Some(symbols),
-        extern_labels, imports,
+        extern_labels, imports, scope,
     }
 }
 
@@ -246,7 +277,7 @@ pub fn find_definition(
     result: &AnalysisResult, name: &str,
 ) -> Option<(PathBuf, bitterasm::token::Span)> {
     let symbols = result.symbols.as_ref()?;
-    let id: SymbolId = symbols.lookup(name)?;
+    let id: SymbolId = result.lookup(name)?;
     let symbol = symbols.get(id);
 
     if symbol.kind == SymbolKind::ExternLabel {
@@ -259,7 +290,7 @@ pub fn find_definition(
         return Some((path.clone(), span));
     }
 
-    let source_id = result.sources.locate_span(symbol.span, Some(&symbol.name))?;
+    let source_id = result.sources.locate_span(symbol.span, Some(&loader::demangle(&symbol.name)))?;
     let file = result.sources.get(source_id)?;
     Some((file.name.clone(), symbol.span))
 }

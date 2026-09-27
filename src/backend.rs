@@ -165,7 +165,7 @@ impl LanguageServer for Backend {
         };
         let symbols = self.analysis.get(&uri);
         let Some(data) =
-            guarded(|| semantic::tokenize(&text, symbols.as_ref().and_then(|a| a.symbols.as_ref())))
+            guarded(|| semantic::tokenize(&text, symbols.as_deref()))
         else {
             return Ok(None);
         };

@@ -22,7 +22,9 @@
 //! parse or resolve yet.
 
 use bitterasm::lexer;
-use bitterasm::resolver::{SymbolKind, SymbolTable};
+use bitterasm::resolver::SymbolKind;
+
+use crate::analysis::AnalysisResult;
 use tower_lsp::lsp_types::{SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend};
 
 pub const TOKEN_TYPES: &[SemanticTokenType] = &[
@@ -44,8 +46,8 @@ pub fn legend() -> SemanticTokensLegend {
     }
 }
 
-fn upgrade_from_symbols(name: &str, symbols: &SymbolTable) -> Option<(u32, u32)> {
-    let symbol = symbols.get(symbols.lookup(name)?);
+fn upgrade_from_symbols(name: &str, result: &AnalysisResult) -> Option<(u32, u32)> {
+    let symbol = result.symbols.as_ref()?.get(result.lookup(name)?);
     Some(match symbol.kind {
         SymbolKind::Macro => (MACRO, 0),
         SymbolKind::Struct | SymbolKind::Enum | SymbolKind::TypeAlias => (TYPE, 0),
@@ -54,13 +56,13 @@ fn upgrade_from_symbols(name: &str, symbols: &SymbolTable) -> Option<(u32, u32)>
     })
 }
 
-pub fn tokenize(source: &str, symbols: Option<&SymbolTable>) -> Vec<SemanticToken> {
-    let Some(symbols) = symbols else { return Vec::new() };
+pub fn tokenize(source: &str, result: Option<&AnalysisResult>) -> Vec<SemanticToken> {
+    let Some(result) = result.filter(|result| result.symbols.is_some()) else { return Vec::new() };
     let Ok(tokens) = lexer::lex(source) else { return Vec::new() };
 
     let mut raw = Vec::new();
     for (name, span) in crate::analysis::names(&tokens) {
-        let Some((ty, modifiers)) = upgrade_from_symbols(&name, symbols) else { continue };
+        let Some((ty, modifiers)) = upgrade_from_symbols(&name, result) else { continue };
         raw.push((span.start, span.end, ty, modifiers));
     }
 

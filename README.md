@@ -16,9 +16,10 @@ exactly what the compiler itself sees.
   type, struct, enum, const, or label are additionally colored by that specific kind,
   the way an IDE distinguishes a known function call from an arbitrary name.
 - **Go to definition** for macros, types, structs, enums, consts, and labels, backed by the
-  real resolver's `SymbolTable` — not a text search. Works across `from x.y import *`
-  imports, and imported `pub` labels jump to the label in their declaring file, since
-  the loader's whole flattened import graph is resolved.
+  real resolver's `SymbolTable` — not a text search. A name means what the compiler says
+  it means in that file: its own declarations, then what it imports, including names
+  re-exported with `pub from` (so `mov` in a file importing `std.x86_64.nasm` jumps to
+  `impl.basm`). Imported `pub` labels jump to the label in their declaring file.
 - **Diagnostics** — lexer, parser, loader, and resolver errors, plus the compiler's
   lint set (`unused_import`, `unreachable_code`, etc.), reported the moment you open,
   edit, or save a file.

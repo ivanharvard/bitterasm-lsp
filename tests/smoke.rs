@@ -122,7 +122,7 @@ fn sections_and_external_labels_parse_resolve_and_highlight() {
 
     assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
     let symbols = result.symbols.as_ref().expect("expected a resolved symbol table");
-    let target = symbols.get(symbols.lookup("target").expect("expected imported public label"));
+    let target = symbols.get(result.lookup("target").expect("expected imported public label"));
     assert_eq!(target.kind, bitterasm::resolver::SymbolKind::ExternLabel);
 
     let definition = analysis::find_definition(&result, "target")
@@ -135,7 +135,7 @@ fn sections_and_external_labels_parse_resolve_and_highlight() {
             .unwrap()
     );
 
-    let semantic_tokens = semantic::tokenize(&text, Some(symbols));
+    let semantic_tokens = semantic::tokenize(&text, Some(&result));
     assert!(
         semantic_tokens.iter().any(|token| token.token_type == 3),
         "the imported external label should receive semantic highlighting"
@@ -177,8 +177,8 @@ fn dotted_labels_resolve_and_highlight() {
         .expect("expected the dotted label's definition");
     assert_eq!(&text[definition.1.start..definition.1.start + 6], ".skip:");
 
-    let symbols = result.symbols.as_ref().expect("expected a resolved symbol table");
-    let semantic_tokens = semantic::tokenize(text, Some(symbols));
+    assert!(result.symbols.is_some(), "expected a resolved symbol table");
+    let semantic_tokens = semantic::tokenize(text, Some(&result));
     assert!(
         semantic_tokens.iter().any(|token| token.token_type == 3 && token.length == 5),
         "the dotted label should be highlighted as one 5-char token"
@@ -188,6 +188,50 @@ fn dotted_labels_resolve_and_highlight() {
     let tokens = bitterasm::lexer::lex("x str.len").unwrap();
     let names: Vec<String> = analysis::names(&tokens).into_iter().map(|(name, _)| name).collect();
     assert_eq!(names, vec!["x", "str", "len"]);
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// `pub from .impl import *` re-exports: a file importing only
+/// `std.x86_64.nasm` still names `impl.basm`'s `Reg` and `mov`, which only
+/// reach it through two re-exports (`nasm` → `intel` → `impl`). Both must
+/// jump to their real declarations and get symbol highlighting, and a name
+/// that's only imported *inside* a dependency (`std.binary`'s `bits`, which
+/// `impl.basm` imports privately) must not resolve here at all.
+#[test]
+#[ignore]
+fn names_reached_through_pub_from_resolve_and_highlight() {
+    let checkout: PathBuf = std::env::var("BITTERASM_CHECKOUT")
+        .expect("set BITTERASM_CHECKOUT to a bitterasm checkout to run this test")
+        .into();
+
+    std::env::set_current_dir(&checkout).unwrap();
+    let dir = std::env::temp_dir().join(format!("bitterasm-lsp-pub-from-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("reexports.basm");
+    let text = "from std.x86_64.nasm import *\n\nmacro zero(r: Reg) {\n    mov r, 0\n}\n\nzero rax\n";
+    std::fs::write(&path, text).unwrap();
+
+    let result = analysis::analyze_file(&path, Some(text));
+    assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+
+    let impl_path = checkout.join("std/x86_64/impl.basm").canonicalize().unwrap();
+    for name in ["Reg", "mov"] {
+        let definition = analysis::find_definition(&result, name)
+            .unwrap_or_else(|| panic!("expected `{name}` to resolve through the re-exports"));
+        assert_eq!(definition.0.canonicalize().unwrap(), impl_path, "`{name}`");
+    }
+
+    assert!(result.lookup("bits").is_none(), "`bits` is only imported inside impl.basm");
+
+    let semantic_tokens = semantic::tokenize(text, Some(&result));
+    let reg_line = text[..text.find("Reg").unwrap()].matches('\n').count() as u32;
+    let mut line = 0;
+    let highlighted_reg = semantic_tokens.iter().any(|token| {
+        line += token.delta_line;
+        line == reg_line && token.token_type == 1
+    });
+    assert!(highlighted_reg, "`Reg` should be highlighted as a type");
 
     std::fs::remove_dir_all(&dir).ok();
 }
