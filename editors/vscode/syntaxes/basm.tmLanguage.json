@@ -106,11 +106,6 @@
           "match": "\\bint\\b"
         },
         {
-          "comment": "`Fn(...)` / `Fn(...) -> ...` — the one generic-parameter bound the language understands (`F: Fn(T) -> S`), recognized by name rather than a real keyword.",
-          "name": "support.type.fn-bound.basm",
-          "match": "\\bFn\\b(?=\\s*\\()"
-        },
-        {
           "comment": "A bare identifier shaped like a generic type parameter (T, U, K, N, T1, ...): a single uppercase letter followed only by digits.",
           "name": "entity.name.type.parameter.basm",
           "match": "\\b[A-Z][0-9]*\\b"

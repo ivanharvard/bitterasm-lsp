@@ -39,13 +39,13 @@ fn reg_definition_is_found() {
     assert_eq!(def.unwrap().0, path);
 }
 
-/// `std.array`'s `mapped<T, S, F: Fn(T) -> S>(arr: Array<T, ...>, f: F)` —
-/// a generic type parameter bound by `Fn(...)`, the newest bit of grammar
+/// `std.array`'s `mapped<T, U>(arr: Array<T, ...>, f: macro(T) -> U)` —
+/// a macro type with generics inside it, the newest bit of grammar
 /// this server has to parse and resolve through. Not a dedicated fixture:
 /// `std/array.basm` already carries it in real, checked-in code.
 #[test]
 #[ignore]
-fn generic_fn_bound_parses_and_resolves_cleanly() {
+fn generic_macro_type_parses_and_resolves_cleanly() {
     let checkout: PathBuf = std::env::var("BITTERASM_CHECKOUT")
         .expect("set BITTERASM_CHECKOUT to a bitterasm checkout to run this test")
         .into();
@@ -234,4 +234,44 @@ fn names_reached_through_pub_from_resolve_and_highlight() {
     assert!(highlighted_reg, "`Reg` should be highlighted as a type");
 
     std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Every `source`/`target` the highlighter marks as implicit across `std`
+/// should sit on a facet line, and plain parameters with those names (every
+/// RISC-V branch's `target: int`) shouldn't be marked at all.
+#[test]
+#[ignore]
+fn implicit_names_in_std_are_only_in_facets() {
+    let checkout: PathBuf = std::env::var("BITTERASM_CHECKOUT")
+        .expect("set BITTERASM_CHECKOUT to a bitterasm checkout to run this test")
+        .into();
+
+    let mut files = Vec::new();
+    let mut dirs = vec![checkout.join("std")];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "basm") {
+                files.push(path);
+            }
+        }
+    }
+
+    let mut found = 0;
+    for path in files {
+        let text = std::fs::read_to_string(&path).unwrap();
+        let Ok(tokens) = bitterasm::lexer::lex(&text) else { continue };
+        for span in semantic::implicit_names(&tokens) {
+            let line_start = text[..span.start].rfind('\n').map_or(0, |at| at + 1);
+            let line_end = text[span.start..].find('\n').map_or(text.len(), |at| span.start + at);
+            let line = &text[line_start..line_end];
+            println!("{}: {}", path.display(), line.trim());
+            assert!(line.contains('|'), "{}: `{}` isn't on a facet line: {line}", path.display(), &text[span.start..span.end]);
+            found += 1;
+        }
+    }
+
+    assert!(found > 0, "expected some implicit names in std");
 }

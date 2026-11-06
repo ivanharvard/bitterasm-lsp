@@ -40,6 +40,14 @@
         "path": "./syntaxes/basm.tmLanguage.json"
       }
     ],
+    "semanticTokenScopes": [
+      {
+        "language": "basm",
+        "scopes": {
+          "variable.defaultLibrary": ["variable.language.basm"]
+        }
+      }
+    ],
     "configuration": {
       "title": "BitterASM",
       "properties": {

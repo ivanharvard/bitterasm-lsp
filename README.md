@@ -15,6 +15,9 @@ exactly what the compiler itself sees.
   When the file last resolved cleanly, plain identifiers that match a top-level macro,
   type, struct, enum, const, or label are additionally colored by that specific kind,
   the way an IDE distinguishes a known function call from an arbitrary name.
+  The implicit names `source` and `target` are colored like Rust's `self`, but only
+  where the compiler binds them: in a struct's or type alias's facets (`target` only in
+  `to`/`from`). A parameter that happens to be named `target` stays an ordinary name.
 - **Go to definition** for macros, types, structs, enums, consts, and labels, backed by the
   real resolver's `SymbolTable` — not a text search. A name means what the compiler says
   it means in that file: its own declarations, then what it imports, including names
