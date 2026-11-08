@@ -5,8 +5,11 @@
 
 use std::path::PathBuf;
 
+// The server uses parts of these that the tests don't.
+#[allow(dead_code)]
 #[path = "../src/analysis.rs"]
 mod analysis;
+#[allow(dead_code)]
 #[path = "../src/semantic.rs"]
 mod semantic;
 
@@ -274,4 +277,53 @@ fn implicit_names_in_std_are_only_in_facets() {
     }
 
     assert!(found > 0, "expected some implicit names in std");
+}
+
+/// Spaces, sections declared `in` them and imported from another file, and
+/// facets written as macros: all resolve, and go-to-definition finds a
+/// section's declaring line in the file it came from.
+#[test]
+#[ignore]
+fn spaces_sections_and_facets_resolve_and_highlight() {
+    let checkout: PathBuf = std::env::var("BITTERASM_CHECKOUT")
+        .expect("set BITTERASM_CHECKOUT to a bitterasm checkout to run this test")
+        .into();
+
+    std::env::set_current_dir(&checkout).unwrap();
+    let path = checkout.join("tests/fixtures/spaces/imported_sections.basm");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let result = analysis::analyze_file(&path, Some(&text));
+    assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+
+    // `.vectors` is declared in the library it's imported from.
+    let library = checkout.join("tests/fixtures/spaces/section_lib.basm").canonicalize().unwrap();
+    let (file, span) = analysis::find_definition(&result, ".vectors").expect("expected `.vectors`'s declaration");
+    assert_eq!(file.canonicalize().unwrap(), library);
+    let library_text = std::fs::read_to_string(&library).unwrap();
+    assert!(library_text[span.start..span.end].starts_with("pub section .vectors in rom"));
+
+    // So is the space it's in.
+    let (file, _) = analysis::find_definition(&result, "rom").expect("expected `rom`'s declaration");
+    assert_eq!(file.canonicalize().unwrap(), library);
+
+    // A space's facets are macros, found like any other.
+    let path = checkout.join("tests/fixtures/spaces/facets.basm");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let result = analysis::analyze_file(&path, Some(&text));
+    assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+    let (file, _) = analysis::find_definition(&result, "start").expect("expected `start`'s declaration");
+    assert!(file.ends_with("std/spaces.basm"), "{file:?}");
+
+    // `stream`, the default space, is highlighted as a built-in.
+    let tokens = semantic::tokenize(&text, Some(&result));
+    let stream = text.find("stream").unwrap();
+    let mut line = 0;
+    let mut column = 0;
+    let found = tokens.iter().any(|token| {
+        line += token.delta_line;
+        column = if token.delta_line == 0 { column + token.delta_start } else { token.delta_start };
+        let offset = text.lines().take(line as usize).map(|l| l.len() + 1).sum::<usize>() + column as usize;
+        offset == stream && token.token_modifiers_bitset == 0b11
+    });
+    assert!(found, "expected `stream` to be highlighted as a built-in");
 }

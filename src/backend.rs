@@ -26,10 +26,8 @@ pub struct Backend {
 /// request handler below routes its real work through this instead of
 /// calling straight into `analysis`/`semantic`/`position`.
 fn guarded<T>(f: impl FnOnce() -> T) -> Option<T> {
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
-        Ok(value) => Some(value),
-        Err(_) => None, // already logged to stderr by the default panic hook
-    }
+    // A panic is already logged to stderr by the default panic hook.
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).ok()
 }
 
 impl Backend {

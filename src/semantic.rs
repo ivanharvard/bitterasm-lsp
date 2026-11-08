@@ -68,6 +68,14 @@ fn upgrade_from_symbols(name: &str, result: &AnalysisResult) -> Option<(u32, u32
     })
 }
 
+/// `stream`, the default space every other is built from, unless the file
+/// has its own `stream`. Only once an analysis exists, like every other
+/// upgrade here.
+fn builtin(name: &str, result: Option<&AnalysisResult>) -> Option<(u32, u32)> {
+    let result = result?;
+    (name == "stream" && result.lookup(name).is_none()).then_some((VARIABLE, READONLY | DEFAULT_LIBRARY))
+}
+
 pub fn tokenize(source: &str, result: Option<&AnalysisResult>) -> Vec<SemanticToken> {
     let Ok(tokens) = lexer::lex(source) else { return Vec::new() };
     let result = result.filter(|result| result.symbols.is_some());
@@ -80,7 +88,7 @@ pub fn tokenize(source: &str, result: Option<&AnalysisResult>) -> Vec<SemanticTo
         let classified = if implicit.contains(&span) {
             Some((VARIABLE, READONLY | DEFAULT_LIBRARY))
         } else {
-            result.and_then(|result| upgrade_from_symbols(&name, result))
+            result.and_then(|result| upgrade_from_symbols(&name, result)).or_else(|| builtin(&name, result))
         };
         let Some((ty, modifiers)) = classified else { continue };
         raw.push((span.start, span.end, ty, modifiers));
@@ -117,8 +125,11 @@ pub(crate) fn implicit_names(tokens: &[Token]) -> Vec<Span> {
         let kind = &tokens[index].kind;
         let next = tokens.get(index + 1).map(|token| &token.kind);
 
+        // `unit: type = S` in an `@extend`: a field's type, not an alias.
+        let after_colon = index > 0 && tokens[index - 1].kind == TokenKind::Colon;
+
         match kind {
-            TokenKind::Struct | TokenKind::Type => {
+            TokenKind::Struct | TokenKind::Type if !after_colon => {
                 owner = Some(Owner::StructOrAlias);
                 facet = None;
                 depth = 0;
@@ -175,11 +186,7 @@ pub(crate) fn implicit_names(tokens: &[Token]) -> Vec<Span> {
             }
 
             TokenKind::Identifier(name) if owner == Some(Owner::StructOrAlias) => {
-                let implicit = match (name.as_str(), facet) {
-                    ("source", Some(_)) => true,
-                    ("target", Some("to" | "from")) => true,
-                    _ => false,
-                };
+                let implicit = matches!((name.as_str(), facet), ("source", Some(_)) | ("target", Some("to" | "from")));
                 if implicit {
                     spans.push(tokens[index].span);
                 }

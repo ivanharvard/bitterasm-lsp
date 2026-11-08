@@ -40,6 +40,10 @@ pub struct AnalysisResult {
     /// one. Covers the file's own declarations and everything it imports,
     /// `pub from` re-exports included — see `AnalysisResult::lookup`.
     pub scope: HashMap<String, String>,
+    /// Where each declared section (`section .text in flash | ...`, or an
+    /// imported `pub section`) is declared. Sections aren't symbols, so
+    /// go-to-definition looks them up here.
+    pub sections: HashMap<String, (PathBuf, Span)>,
 }
 
 impl AnalysisResult {
@@ -91,6 +95,7 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
                 extern_labels: HashMap::new(),
                 imports: Vec::new(),
                 scope: HashMap::new(),
+                sections: HashMap::new(),
             }
         };
         ($imports:expr) => {
@@ -99,6 +104,7 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
                 extern_labels: HashMap::new(),
                 imports: $imports,
                 scope: HashMap::new(),
+                sections: HashMap::new(),
             }
         };
     }
@@ -150,6 +156,18 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
             _ => None,
         })
         .collect();
+    // The first declaring line of each section wins, as in the compiler:
+    // later ones only switch to it.
+    let mut sections = HashMap::new();
+    for (statement, module) in flattened.statements.iter().zip(origins.all()) {
+        if let Statement::Section(section) = statement
+            && section.declares()
+        {
+            sections
+                .entry(section.name.clone())
+                .or_insert_with(|| (origins.path(*module).to_path_buf(), section.span));
+        }
+    }
     let (flattened, statement_modules) = match resolver::unroll_top_level(flattened, origins.all()) {
         Ok(result) => result,
         Err(error) => {
@@ -182,7 +200,7 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
 
     AnalysisResult {
         sources, entry_source, entry_path, diagnostics: diags, symbols: Some(symbols),
-        extern_labels, imports, scope,
+        extern_labels, imports, scope, sections,
     }
 }
 
@@ -277,7 +295,11 @@ pub fn find_definition(
     result: &AnalysisResult, name: &str,
 ) -> Option<(PathBuf, bitterasm::token::Span)> {
     let symbols = result.symbols.as_ref()?;
-    let id: SymbolId = result.lookup(name)?;
+    // A section name (`.text`) isn't a symbol; a dotted label is.
+    let Some(id) = result.lookup(name) else {
+        return result.sections.get(name).cloned();
+    };
+    let id: SymbolId = id;
     let symbol = symbols.get(id);
 
     if symbol.kind == SymbolKind::ExternLabel {

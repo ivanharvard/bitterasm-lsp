@@ -78,6 +78,11 @@
     "keywords": {
       "patterns": [
         {
+          "comment": "`space flash = ...` declares a space. Elsewhere `space` is only a type (see #types), so it stays usable as an ordinary name.",
+          "match": "\\b(space)\\s+(?=[A-Za-z_][A-Za-z0-9_]*\\s*=)",
+          "captures": { "1": { "name": "storage.type.basm" } }
+        },
+        {
           "name": "keyword.control.import.basm",
           "match": "\\b(from|import|as)\\b"
         },
@@ -94,6 +99,10 @@
           "match": "\\bsection\\b"
         },
         {
+          "name": "keyword.operator.word.basm",
+          "match": "\\bin\\b"
+        },
+        {
           "name": "keyword.other.lint.basm",
           "match": "\\b(allow|expect|warn|deny|forbid|syntax|before|after|invariant|from|to|emits|leaks_section)\\b"
         }
@@ -103,7 +112,12 @@
       "patterns": [
         {
           "name": "entity.name.type.primitive.basm",
-          "match": "\\bint\\b"
+          "match": "\\b(int|label|space)\\b"
+        },
+        {
+          "comment": "The default space, which every other space is built from.",
+          "name": "constant.language.basm",
+          "match": "\\bstream\\b"
         },
         {
           "comment": "A bare identifier shaped like a generic type parameter (T, U, K, N, T1, ...): a single uppercase letter followed only by digits.",
