@@ -279,9 +279,9 @@ fn implicit_names_in_std_are_only_in_facets() {
     assert!(found > 0, "expected some implicit names in std");
 }
 
-/// Spaces, sections declared `in` them and imported from another file, and
-/// facets written as macros: all resolve, and go-to-definition finds a
-/// section's declaring line in the file it came from.
+/// Spaces, sections in them shared as consts from another file, and facets
+/// written as macros: all resolve, and go-to-definition finds a section's
+/// const in the file it came from.
 #[test]
 #[ignore]
 fn spaces_sections_and_facets_resolve_and_highlight() {
@@ -295,12 +295,16 @@ fn spaces_sections_and_facets_resolve_and_highlight() {
     let result = analysis::analyze_file(&path, Some(&text));
     assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
 
-    // `.vectors` is declared in the library it's imported from.
+    // `VECTORS`, and the section `.vectors` it holds, are declared in the
+    // library they're imported from.
     let library = checkout.join("tests/fixtures/spaces/section_lib.basm").canonicalize().unwrap();
-    let (file, span) = analysis::find_definition(&result, ".vectors").expect("expected `.vectors`'s declaration");
-    assert_eq!(file.canonicalize().unwrap(), library);
     let library_text = std::fs::read_to_string(&library).unwrap();
-    assert!(library_text[span.start..span.end].starts_with("pub section .vectors in rom"));
+    for name in ["VECTORS", ".vectors"] {
+        let (file, span) = analysis::find_definition(&result, name).unwrap_or_else(|| panic!("expected `{name}`'s declaration"));
+        assert_eq!(file.canonicalize().unwrap(), library);
+        let found = &library_text[span.start..span.end];
+        assert!(found.contains("VECTORS = section .vectors in rom"), "`{name}` found {found:?}");
+    }
 
     // So is the space it's in.
     let (file, _) = analysis::find_definition(&result, "rom").expect("expected `rom`'s declaration");

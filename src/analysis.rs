@@ -40,10 +40,13 @@ pub struct AnalysisResult {
     /// one. Covers the file's own declarations and everything it imports,
     /// `pub from` re-exports included — see `AnalysisResult::lookup`.
     pub scope: HashMap<String, String>,
-    /// Where each declared section (`section .text in flash | ...`, or an
-    /// imported `pub section`) is declared. Sections aren't symbols, so
-    /// go-to-definition looks them up here.
+    /// Where each section gets its space or facets: a `section .text in
+    /// flash | ...` line, or a const holding `section .text | ...`, in this
+    /// file or one it imports. Sections aren't symbols, so go-to-definition
+    /// looks them up here.
     pub sections: HashMap<String, (PathBuf, Span)>,
+    /// Each module's file, by the module id a symbol records.
+    pub module_files: Vec<PathBuf>,
 }
 
 impl AnalysisResult {
@@ -96,6 +99,7 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
                 imports: Vec::new(),
                 scope: HashMap::new(),
                 sections: HashMap::new(),
+                module_files: Vec::new(),
             }
         };
         ($imports:expr) => {
@@ -105,6 +109,7 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
                 imports: $imports,
                 scope: HashMap::new(),
                 sections: HashMap::new(),
+                module_files: Vec::new(),
             }
         };
     }
@@ -156,16 +161,20 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
             _ => None,
         })
         .collect();
-    // The first declaring line of each section wins, as in the compiler:
-    // later ones only switch to it.
+    // The first line giving each section its space or facets wins: a bare
+    // `section .text` only switches to it.
     let mut sections = HashMap::new();
     for (statement, module) in flattened.statements.iter().zip(origins.all()) {
-        if let Statement::Section(section) = statement
-            && section.declares()
-        {
-            sections
-                .entry(section.name.clone())
-                .or_insert_with(|| (origins.path(*module).to_path_buf(), section.span));
+        let found = match statement {
+            Statement::Section(section) if section.declares() => Some((section.name.clone(), section.span)),
+            Statement::Const(declaration) => match &declaration.value {
+                bitterasm::ast::Expr::SectionLiteral { name, .. } => Some((name.clone(), declaration.span)),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some((name, span)) = found {
+            sections.entry(name).or_insert_with(|| (origins.path(*module).to_path_buf(), span));
         }
     }
     let (flattened, statement_modules) = match resolver::unroll_top_level(flattened, origins.all()) {
@@ -197,10 +206,11 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
     }
 
     let scope = origins.scopes()[origins.entry_module()].clone();
+    let module_files = (0..origins.module_paths().len()).map(|module| origins.path(module).to_path_buf()).collect();
 
     AnalysisResult {
         sources, entry_source, entry_path, diagnostics: diags, symbols: Some(symbols),
-        extern_labels, imports, scope, sections,
+        extern_labels, imports, scope, sections, module_files,
     }
 }
 
@@ -312,7 +322,13 @@ pub fn find_definition(
         return Some((path.clone(), span));
     }
 
-    let source_id = result.sources.locate_span(symbol.span, Some(&loader::demangle(&symbol.name)))?;
+    // The symbol's own module says which file it's in. Searching every
+    // file for the name at that span can find it in more than one.
+    let source_id = result
+        .module_files
+        .get(symbol.module)
+        .and_then(|file| result.sources.find_span_in(file, symbol.span))
+        .or_else(|| result.sources.locate_span(symbol.span, Some(&loader::demangle(&symbol.name))))?;
     let file = result.sources.get(source_id)?;
     Some((file.name.clone(), symbol.span))
 }
