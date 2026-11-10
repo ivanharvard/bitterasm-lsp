@@ -129,6 +129,9 @@ pub(crate) fn implicit_names(tokens: &[Token]) -> Vec<Span> {
         let after_colon = index > 0 && tokens[index - 1].kind == TokenKind::Colon;
 
         match kind {
+            // `struct { x: int }` is an anonymous struct type, not a
+            // declaration.
+            TokenKind::Struct if next == Some(&TokenKind::LBrace) => {}
             TokenKind::Struct | TokenKind::Type if !after_colon => {
                 owner = Some(Owner::StructOrAlias);
                 facet = None;

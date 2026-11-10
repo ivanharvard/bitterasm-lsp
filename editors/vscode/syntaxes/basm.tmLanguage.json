@@ -78,11 +78,6 @@
     "keywords": {
       "patterns": [
         {
-          "comment": "`space flash = ...` declares a space. Elsewhere `space` is only a type (see #types), so it stays usable as an ordinary name.",
-          "match": "\\b(space)\\s+(?=[A-Za-z_][A-Za-z0-9_]*\\s*=)",
-          "captures": { "1": { "name": "storage.type.basm" } }
-        },
-        {
           "name": "keyword.control.import.basm",
           "match": "\\b(from|import|as)\\b"
         },
