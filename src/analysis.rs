@@ -1,7 +1,8 @@
 //! Disk-based analysis of a single `.basm` file: treats the file as its own
 //! entry point (mirroring `bitterasm check <file>`), flattens its imports,
 //! resolves symbols, and produces diagnostics — everything go-to-definition
-//! and publishDiagnostics need. Re-run on open/change/save; nothing here
+//! and publishDiagnostics need. A statement that fails to parse is left
+//! out and the rest is still analyzed. Re-run on open/change/save; nothing here
 //! depends on unsaved buffer state in *imported* files, only the entry file
 //! itself (see `overlay`).
 //!
@@ -114,14 +115,28 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
         };
     }
 
-    let program = match loader::load_entry_program(entry) {
+    // Loaded leniently: a statement that fails to parse is reported and
+    // left out, and everything else still gets analyzed, so go-to-definition
+    // and hover keep working on the rest of the program. The parse errors
+    // are the diagnostics then: a later step's errors are likely just their
+    // knock-on effects, like a use of a declaration that didn't parse.
+    let (program, parse_errors) = loader::load_entry_program_lenient(entry);
+    let broken = !parse_errors.is_empty();
+    for error in parse_errors {
+        diags.extend(diagnostics::load_errors(error, &mut sources));
+    }
+    let program = match program {
         Ok(program) => program,
         Err(error) => {
-            diags.push(diagnostics::load_error(error, &mut sources));
+            if !broken {
+                diags.extend(diagnostics::load_errors(error, &mut sources));
+            }
             bail!();
         }
     };
-    diags.extend(diagnostics::lint_program(&program, entry_source, &config));
+    if !broken {
+        diags.extend(diagnostics::lint_program(&program, entry_source, &config));
+    }
 
     let imports: Vec<ImportStatement> = program
         .statements
@@ -144,10 +159,12 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
     // module happens to occupy id 0, silently passing (or wrongly
     // failing) `bitterasm`'s cross-module field-visibility check instead
     // of matching what `bitterasm check` itself would report.
-    let (flattened, origins) = match loader::load_program_with_modules(entry) {
+    let (flattened, origins) = match loader::load_program_with_modules_lenient(entry).0 {
         Ok(result) => result,
         Err(error) => {
-            diags.push(diagnostics::load_error(error, &mut sources));
+            if !broken {
+                diags.extend(diagnostics::load_errors(error, &mut sources));
+            }
             bail!(imports);
         }
     };
@@ -180,27 +197,35 @@ pub fn analyze_file(entry: &Path, overlay: Option<&str>) -> AnalysisResult {
     let (flattened, statement_modules) = match resolver::unroll_top_level(flattened, origins.all()) {
         Ok(result) => result,
         Err(error) => {
-            let source = locate(&sources, &error);
-            diags.push(diagnostics::resolve_error(error, source));
+            if !broken {
+                let source = locate(&sources, &error);
+                diags.push(diagnostics::resolve_error(error, source));
+            }
             bail!(imports);
         }
     };
     if let Err(error) = resolver::validate_facets(&flattened) {
-        let source = locate(&sources, &error);
-        diags.push(diagnostics::resolve_error(error, source));
+        if !broken {
+            let source = locate(&sources, &error);
+            diags.push(diagnostics::resolve_error(error, source));
+        }
         bail!(imports);
     }
 
     let symbols = match resolver::collect_symbols(&flattened, &statement_modules) {
         Ok(symbols) => symbols,
         Err(error) => {
-            let source = locate(&sources, &error);
-            diags.push(diagnostics::resolve_error(error, source));
+            if !broken {
+                let source = locate(&sources, &error);
+                diags.push(diagnostics::resolve_error(error, source));
+            }
             bail!(imports);
         }
     };
 
-    if let Err(error) = resolver::ConstEvaluator::new(&flattened, &symbols).evaluate_all() {
+    if !broken
+        && let Err(error) = resolver::ConstEvaluator::new(&flattened, &symbols).evaluate_all()
+    {
         let source = locate(&sources, &error);
         diags.push(diagnostics::resolve_error(error, source));
     }

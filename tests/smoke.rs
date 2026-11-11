@@ -331,3 +331,39 @@ fn spaces_sections_and_facets_resolve_and_highlight() {
     });
     assert!(found, "expected `stream` to be highlighted as a built-in");
 }
+
+/// A file that fails to parse, or imports one that does, still gets a
+/// symbol table from the statements that parsed: go-to-definition keeps
+/// working, and every parse error is shown, not just the first.
+#[test]
+#[ignore]
+fn definitions_survive_parse_errors() {
+    let checkout: PathBuf = std::env::var("BITTERASM_CHECKOUT")
+        .expect("set BITTERASM_CHECKOUT to a bitterasm checkout to run this test")
+        .into();
+
+    std::env::set_current_dir(&checkout).unwrap();
+    let dir = std::env::temp_dir().join(format!("bitterasm-lsp-recovery-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("lib.basm"),
+        "const broken = )\n\npub macro helper(x: int) {\n    @emit x\n}\n",
+    )
+    .unwrap();
+    let path = dir.join("main.basm");
+    let text = "from .lib import helper\n\nmacro show(x: int) {\n    helper x +\n    helper x\n}\n\nconst also_broken = (1\nshow 1\n";
+    std::fs::write(&path, text).unwrap();
+
+    let result = analysis::analyze_file(&path, Some(text));
+    assert_eq!(result.diagnostics.len(), 3, "{:#?}", result.diagnostics);
+    assert!(result.symbols.is_some(), "expected a symbol table despite the errors");
+
+    let (file, span) = analysis::find_definition(&result, "show").expect("expected `show`'s declaration");
+    assert_eq!(file, path);
+    assert!(text[span.start..].starts_with("macro show"));
+
+    let (file, _) = analysis::find_definition(&result, "helper").expect("expected `helper`'s declaration");
+    assert_eq!(file, dir.join("lib.basm").canonicalize().unwrap());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
